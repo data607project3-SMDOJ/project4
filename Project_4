@@ -1,0 +1,110 @@
+---
+title: "Project 4"
+author: 
+  - Shana Green
+  - Mark Gonsalves 
+  - Dominika Markowska-Desvallons
+  - Orli Khaimova 
+  - John Mazon
+date: "11/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Loading Libraries
+
+```{r, message = FALSE}
+library(tidyverse)
+library(tm)
+library(magrittr)
+library(qdap)
+library(data.table)
+```
+
+
+### Loading the Data
+
+```{r}
+spam_folder <- 'C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/spam/'
+ham_folder <- 'C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/easy_ham_2/'
+
+length(list.files(path = spam_folder))
+
+spam_files <- list.files(path = spam_folder, full.names = TRUE)
+ham_files <- list.files(path = ham_folder, full.names = TRUE)
+
+spam <- list.files(path = spam_folder) %>%
+  as.data.frame() %>%
+  set_colnames("file") %>%
+  mutate(text = lapply(spam_files, read_lines)) %>%
+  unnest(c(text)) %>%
+  mutate(class = "spam") %>%
+  group_by(file) %>%
+  mutate(text = paste(text, collapse = " ")) %>%
+  ungroup() %>%
+  distinct()
+            
+ham <- list.files(path = ham_folder) %>%
+  as.data.frame() %>%
+  set_colnames("file") %>%
+  mutate(text = lapply(ham_files, read_lines)) %>%
+  unnest(c(text)) %>%
+  mutate(class = "ham") %>%
+  group_by(file) %>%
+  mutate(text = paste(text, collapse = " ")) %>%
+  ungroup() %>%
+  distinct()
+
+#ham <- read_lines('C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/20030228_easy_ham_2.tar.bz2', 
+#                  skip_empty_rows = TRUE, n_max = 10000) %>%
+#  as.data.frame() %>%
+#  set_colnames("text") %>%
+#  mutate(class = "ham")
+
+#spam <- read_lines('C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/20030228_spam.tar.bz2', 
+#                  skip_empty_rows = TRUE, n_max = 10000) %>%
+#  as.data.frame() %>%
+#  set_colnames("text") %>%
+#  mutate(class = "spam")
+
+
+
+```
+
+### Tidying Data
+```{r}
+ham_spam <- rbind(ham, spam) %>%
+  select(class, file, text)
+
+ham_spam$text <- ham_spam$text %>%
+  str_replace(.,"[\\r\\n\\t]+", "")
+
+replacePunctuation <- content_transformer(function(x) {return (gsub("[[:punct:]]", " ", x))})
+
+corpus <- Corpus(VectorSource(ham_spam$text)) %>%
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(replacePunctuation) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(stripWhitespace)
+
+inspect(corpus[1])
+
+addTag <- function(corpus, tag, value){
+  for (i in 1:length(corpus)){
+    meta(corpus[[i]], tag) <- value                    
+  }
+  return(corpus)
+}
+
+dtm <- DocumentTermMatrix(corpus)
+
+test<-as.matrix(dtm)
+
+inspect(dtm)
+
+```
+
