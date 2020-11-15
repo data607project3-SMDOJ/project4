@@ -1,0 +1,236 @@
+---
+title: "Project 4"
+author: 
+  - Shana Green
+  - Mark Gonsalves 
+  - Dominika Markowska-Desvallons
+  - Orli Khaimova 
+  - John Mazon
+date: "11/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+As a group, we worked with two files containing spam and ham to predict if a 
+document is spam or not .By utilizing our ‘training’ documents, our group was 
+able to classify the “test” documents. We were able to communicate via zoom 
+meeting and collaborating with Github. 
+
+For this project, we started with a spam/ham dataset, then predicted the class 
+of new documents (either withheld from the training dataset or from another source 
+such as your own spam folder). We are provided with the [corpus](https://spamassassin.apache.org/old/publiccorpus/) and instructions on how to download the ham and spam files.
+
+
+### Loading Libraries
+
+We started by loading the following libraries. `e1071` was used for model prediction
+and to perform the Naive Bayes classifier. `caret` was used to produce a confusion
+matrix for the classifier.
+
+```{r, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(tm)
+library(magrittr)
+library(data.table)
+library(e1071)
+library(caret)
+```
+
+
+### Loading the Data
+
+The first step was to load the corpus data into our frames `spam_folder` and 
+`ham_folder`. For better understanding we then utilized `list.files` on our 
+`spam_folder` object which produces a character vector of the names of files or 
+directories in the named directory. We then read that info into a data frame. We
+specified our column names. Then we used the `lapply` function which is useful for 
+performing operations on list objects and returns a list object of the same length
+as the original set. It takes a list, vector or data frame as input and gives output
+in the list.
+
+Next, since we have a list-column, this makes each element of the list its own row. 
+`unnest()` can handle list-columns that contain atomic vectors, lists, or data 
+frames however not a mixture of the different types. 
+
+Similarly we follow this process for our `spam_folder` contents. 
+
+
+```{r}
+spam_folder <- 'C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/spam/'
+ham_folder <- 'C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/easy_ham_2/'
+
+length(list.files(path = spam_folder))
+length(list.files(path = ham_folder))
+
+spam_files <- list.files(path = spam_folder, full.names = TRUE)
+ham_files <- list.files(path = ham_folder, full.names = TRUE)
+
+spam <- list.files(path = spam_folder) %>%
+  as.data.frame() %>%
+  set_colnames("file") %>%
+  mutate(text = lapply(spam_files, read_lines)) %>%
+  unnest(c(text)) %>%
+  mutate(class = "spam",
+         spam = 1) %>%
+  group_by(file) %>%
+  mutate(text = paste(text, collapse = " ")) %>%
+  ungroup() %>%
+  distinct()
+            
+ham <- list.files(path = ham_folder) %>%
+  as.data.frame() %>%
+  set_colnames("file") %>%
+  mutate(text = lapply(ham_files, read_lines)) %>%
+  unnest(c(text)) %>%
+  mutate(class = "ham",
+         spam = 0) %>%
+  group_by(file) %>%
+  mutate(text = paste(text, collapse = " ")) %>%
+  ungroup() %>%
+  distinct()
+
+#ham <- read_lines('C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/20030228_easy_ham_2.tar.bz2', 
+#                  skip_empty_rows = TRUE, n_max = 10000) %>%
+#  as.data.frame() %>%
+#  set_colnames("text") %>%
+#  mutate(class = "ham")
+
+#spam <- read_lines('C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/20030228_spam.tar.bz2', 
+#                  skip_empty_rows = TRUE, n_max = 10000) %>%
+#  as.data.frame() %>%
+#  set_colnames("text") %>%
+#  mutate(class = "spam")
+
+```
+
+### Tidying Data / Creating Corpus
+
+This was perhaps the section we most found challenging. The following step in our
+process was to use an `rbind` function for the contents of ‘ham’ and ‘spam’. From 
+previous assignment experience we knew the `rbind` function can be used to combine
+several vectors, matrices and/or data frames by rows. Keeping in mind that `select()` 
+keeps only the variables mentioned we utilized this with values of class,spam, file, text. 
+Another handy function to tidy the data that we utilized was `str_replace`. Basically,
+we filtered our ‘ham_spam’ for any empty/white spaces caused by factors such as ‘tabs’. 
+We also found helpful the content transformers function. This is basically functions 
+which modify the content of an R object. In this case we used it to modify punctuation
+and to replace it with a space. 
+
+One extremely helpful tool we utilized all throughout the project was the `tm` 
+package which provides a function `tm_map()` to apply cleaning functions to an 
+entire corpus, making the cleaning steps easier. `tm_map()` takes two arguments, 
+a corpus and a cleaning function. For example, we used `removeNumbers()` from the 
+`tm` package. This is among other functionalities of course such as ‘stopwords’. 
+In general, there are words that are frequent but provide little information. These 
+are called stop words, and we wish to remove them from our analysis. Some common
+English stop words include "I", "she'll", "the", etc. In the `tm` package, there
+are 174 common English stop words. 
+
+During the process of completing this project we have also learned to manipulate 
+data with functionalities such as a document-term matrix or term-document matrix 
+which is a mathematical matrix that describes the frequency of terms that occur 
+in a collection of documents. This is a matrix where each row represents one 
+document, each column represents one term (word), each value (typically) contains 
+the number of appearances of that term in that document. We experimented as well 
+using function `removeSparseTerms` which removes those terms which don't appear 
+too often in our data. In this instance we removed word that did not appear in 
+at least 10 documents.
+
+
+
+```{r, warning = FALSE}
+ham_spam <- rbind(ham, spam) %>%
+  select(class, spam, file, text)
+
+ham_spam$text <- ham_spam$text %>%
+  str_replace(.,"[\\r\\n\\t]+", "")
+
+replacePunctuation <- content_transformer(function(x) {return (gsub("[[:punct:]]", " ", x))})
+
+#NewWords <- c("localhost", "received", "delivered", "com", "net", "org", "http", "font", "aug")
+#  tm_map(removeWords, NewWords) %>%
+
+corpus <- Corpus(VectorSource(ham_spam$text)) %>%
+  tm_map(content_transformer(tolower)) %>%
+  tm_map(removeWords, stopwords("english")) %>%
+  tm_map(replacePunctuation) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus)
+
+dtm <- removeSparseTerms(dtm, 1-(10/length(corpus)))
+
+inspect(dtm)
+
+dim(dtm)
+```
+
+### Training Data
+
+First, we took the Document Term Matrix that was created before and set it as a
+data frame. We also added a column which would classify each document/row as spam
+or not spam. We converted the `spam` column into a factor. To split the data into
+training and testing data, we decided to sample 80% as training data and 20% as
+testing data. We also found the proportions of ham to spam count. We found that 
+both the testing and training data had about 73% ham and 27% spam.
+
+```{r}
+email_dtm <- dtm %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  sapply(., as.numeric) %>%
+  as.data.frame() %>%
+  mutate(class = ham_spam$class) %>%
+  select(class, everything())
+
+#count <- data.frame(word = colnames(email_dtm),
+#                    count = colSums(email_dtm)) %>%
+#  filter(word != "spam")
+
+email_dtm$class <- as.factor(email_dtm$class)
+
+#Training & Test set
+sample_size <- floor(0.8 * nrow(email_dtm))
+
+set.seed(1564)
+index <- sample(seq_len(nrow(email_dtm)), size = sample_size)
+  
+dtm_train <- email_dtm[index, ]
+dtm_test <-  email_dtm[-index, ]
+
+#Training & Test Spam Count
+train_labels <- dtm_train$class
+test_labels <- dtm_test$class
+
+#Proportion for training & test Spam
+prop.table(table(train_labels))
+prop.table(table(test_labels))
+
+```
+### Model Training
+
+```{r}
+dtm_train[ , 2:3816] <- ifelse(dtm_train[ , 2:3816] == 0, "No", "Yes")
+dtm_test[ , 2:3816] <- ifelse(dtm_test[ , 2:3816] == 0, "No", "Yes")
+
+model_classifier <- naiveBayes(dtm_train, train_labels) 
+
+test_pred <- predict(model_classifier, dtm_test)
+
+confusionMatrix(test_pred, test_labels, positive = "spam", 
+                dnn = c("Prediction","Actual"))
+```
+
+### Conclusion
+
+As tested using the Naive Bayes model from the `e1071` model, we were able to
+accurately predict roughly 99% of the emails into the proper categories. There is
+also a 98% sensitivity rate which means that 98% of the spam emails were classified
+correctly and a 99% specificity rate means that 99% of the ham emails were 
+classified correctly.
