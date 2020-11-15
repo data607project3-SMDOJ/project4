@@ -16,12 +16,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ### Loading Libraries
 
-```{r, message = FALSE}
+```{r, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(tm)
 library(magrittr)
-library(qdap)
 library(data.table)
+library(e1071)
 ```
 
 
@@ -41,7 +41,8 @@ spam <- list.files(path = spam_folder) %>%
   set_colnames("file") %>%
   mutate(text = lapply(spam_files, read_lines)) %>%
   unnest(c(text)) %>%
-  mutate(class = "spam") %>%
+  mutate(class = "spam",
+         spam = 1) %>%
   group_by(file) %>%
   mutate(text = paste(text, collapse = " ")) %>%
   ungroup() %>%
@@ -52,7 +53,8 @@ ham <- list.files(path = ham_folder) %>%
   set_colnames("file") %>%
   mutate(text = lapply(ham_files, read_lines)) %>%
   unnest(c(text)) %>%
-  mutate(class = "ham") %>%
+  mutate(class = "ham",
+         spam = 0) %>%
   group_by(file) %>%
   mutate(text = paste(text, collapse = " ")) %>%
   ungroup() %>%
@@ -70,19 +72,21 @@ ham <- list.files(path = ham_folder) %>%
 #  set_colnames("text") %>%
 #  mutate(class = "spam")
 
-
-
 ```
 
-### Tidying Data
-```{r}
+### Tidying Data / Creating Corpus
+
+```{r, warning = FALSE}
 ham_spam <- rbind(ham, spam) %>%
-  select(class, file, text)
+  select(class, spam, file, text)
 
 ham_spam$text <- ham_spam$text %>%
   str_replace(.,"[\\r\\n\\t]+", "")
 
 replacePunctuation <- content_transformer(function(x) {return (gsub("[[:punct:]]", " ", x))})
+
+#NewWords <- c("localhost", "received", "delivered", "com", "net", "org", "http", "font", "aug")
+#  tm_map(removeWords, NewWords) %>%
 
 corpus <- Corpus(VectorSource(ham_spam$text)) %>%
   tm_map(content_transformer(tolower)) %>%
@@ -91,20 +95,55 @@ corpus <- Corpus(VectorSource(ham_spam$text)) %>%
   tm_map(removeNumbers) %>%
   tm_map(stripWhitespace)
 
-inspect(corpus[1])
-
-addTag <- function(corpus, tag, value){
-  for (i in 1:length(corpus)){
-    meta(corpus[[i]], tag) <- value                    
-  }
-  return(corpus)
-}
-
 dtm <- DocumentTermMatrix(corpus)
 
-test<-as.matrix(dtm)
+dtm <- removeSparseTerms(dtm, 1-(10/length(corpus)))
 
 inspect(dtm)
+
+dim(dtm)
+```
+
+### Training Dataa
+
+First, we took the Document Term Matrix that was created before and set it as a
+data frame. We also added a column which would classify each document/row as spam
+or not spam. We converted the `spam` column into a factor. To split the data into
+training and testing data, we decided to sample 80% as training data and 20% as
+testing data. We also found the proportions of ham to spam count. We found that 
+both the testing and training data had about 73% ham and 27% spam.
+
+```{r}
+email_dtm <- dtm %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  sapply(., as.numeric) %>%
+  as.data.frame() %>%
+  mutate(spam = ham_spam$spam) %>%
+  select(spam, everything())
+
+#count <- data.frame(word = colnames(email_dtm),
+#                    count = colSums(email_dtm)) %>%
+#  filter(word != "spam")
+
+email_dtm$spam <- as.factor(email_dtm$spam)
+
+#Training & Test set
+sample_size <- floor(0.8 * nrow(email_dtm))
+
+set.seed(1564)
+index <- sample(seq_len(nrow(email_dtm)), size = sample_size)
+  
+dtm_train <- email_dtm[index, ]
+dtm_test <-  email_dtm[-index, ]
+
+#Training & Test Spam Count
+train_labels <- dtm_train$spam
+test_labels <- dtm_test$spam
+
+#Proportion for training & test Spam
+prop.table(table(train_labels))
+prop.table(table(test_labels))
 
 ```
 
