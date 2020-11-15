@@ -14,6 +14,10 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+### Introduction
+
+
+
 ### Loading Libraries
 
 ```{r, warning = FALSE, message = FALSE}
@@ -22,6 +26,8 @@ library(tm)
 library(magrittr)
 library(data.table)
 library(e1071)
+library(caret)
+
 ```
 
 
@@ -32,6 +38,7 @@ spam_folder <- 'C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/spam/'
 ham_folder <- 'C:/Users/Home/Desktop/MSDS/DATA 607/Project 4/easy_ham_2/'
 
 length(list.files(path = spam_folder))
+length(list.files(path = ham_folder))
 
 spam_files <- list.files(path = spam_folder, full.names = TRUE)
 ham_files <- list.files(path = ham_folder, full.names = TRUE)
@@ -119,14 +126,14 @@ email_dtm <- dtm %>%
   as.data.frame() %>%
   sapply(., as.numeric) %>%
   as.data.frame() %>%
-  mutate(spam = ham_spam$spam) %>%
-  select(spam, everything())
+  mutate(class = ham_spam$class) %>%
+  select(class, everything())
 
 #count <- data.frame(word = colnames(email_dtm),
 #                    count = colSums(email_dtm)) %>%
 #  filter(word != "spam")
 
-email_dtm$spam <- as.factor(email_dtm$spam)
+email_dtm$class <- as.factor(email_dtm$class)
 
 #Training & Test set
 sample_size <- floor(0.8 * nrow(email_dtm))
@@ -138,12 +145,32 @@ dtm_train <- email_dtm[index, ]
 dtm_test <-  email_dtm[-index, ]
 
 #Training & Test Spam Count
-train_labels <- dtm_train$spam
-test_labels <- dtm_test$spam
+train_labels <- dtm_train$class
+test_labels <- dtm_test$class
 
 #Proportion for training & test Spam
 prop.table(table(train_labels))
 prop.table(table(test_labels))
 
 ```
+### Model Training
 
+```{r}
+dtm_train[ , 2:3816] <- ifelse(dtm_train[ , 2:3816] == 0, "No", "Yes")
+dtm_test[ , 2:3816] <- ifelse(dtm_test[ , 2:3816] == 0, "No", "Yes")
+
+model_classifier <- naiveBayes(dtm_train, train_labels) 
+
+test_pred <- predict(model_classifier, dtm_test)
+
+confusionMatrix(test_pred, test_labels, positive = "spam", 
+                dnn = c("Prediction","Actual"))
+```
+
+### Conclusion
+
+As tested using the Naive Bayes model from the `e1071` model, we were able to
+accurately predict roughly 99% of the emails into the proper categories. There is
+also a 98% sensitivity rate which means that 98% of the spam emails were classified
+correctly and a 99% specificity rate means that 99% of the ham emails were 
+classified correctly.
